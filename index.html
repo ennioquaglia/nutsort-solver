@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+  <body>
+    <h2>NutSort Solver</h2>
+    <p id="demo"></p>
+
+    <script>
+      String.prototype.hashCode = function () {
+        var hash = 0,
+          i,
+          chr;
+        if (this.length === 0) return hash;
+        for (i = 0; i < this.length; i++) {
+          chr = this.charCodeAt(i);
+          hash = (hash << 5) - hash + chr;
+          hash |= 0; // Convert to 32bit integer
+        }
+        return hash;
+      };
+
+      class Move {
+        constructor(from, to, euristic) {
+          this.from = from;
+          this.to = to;
+          this.euristic = euristic;
+        }
+        clone() {
+          return new Move(this.from, this.to, this.euristic);
+        }
+        toString() {
+          return (
+            "(" + this.from + "->" + this.to + " [" + this.euristic + "] )"
+          );
+        }
+      }
+
+      class Screw {
+        constructor(param) {
+          if (param instanceof Array) {
+            this.size = param.length;
+            this.nuts = param;
+          } else {
+            this.size = param;
+            this.nuts = [];
+          }
+        }
+        clone() {
+          let s = new Screw(this.nuts.map((n) => n));
+          s.size = this.size;
+          return s;
+        }
+        hasSpace() {
+          return this.numFreeSpaces() > 0;
+        }
+        numFreeSpaces() {
+          return this.size - this.nuts.length;
+        }
+        any() {
+          return this.nuts.length > 0;
+        }
+
+        push(nut) {
+          if (!this.hasSpace()) {
+            throw new Exception("screw is already full");
+          }
+          this.nuts.push(nut);
+        }
+        pop() {
+          return this.nuts.pop();
+        }
+        last() {
+          return this.nuts[this.nuts.length - 1];
+        }
+        toString() {
+          return "" + this.size + "...";
+        }
+        isSolved() {
+          return (
+            this.isEmpty() ||
+            (this.hasOnlyOneColor() && this.nuts.length == this.size)
+          );
+        }
+        isEmpty() {
+          return !this.any();
+        }
+        hasOnlyOneColor() {
+          return this.any() && this.nuts.every((n) => n == this.nuts[0]);
+        }
+        numSameColorNutsOnTop() {
+          if (!this.any()) return 0;
+          let color = this.nuts.at(-1);
+          let count = 1;
+          while (this.nuts.at(-count - 1) == color && count < this.nuts.length)
+            count++;
+          return count;
+        }
+        isEqual(other) {
+          if (this.nuts.length != other.nuts.length) return false;
+          for (let i = 0; i < this.nuts.length; ++i) {
+            if (this.nuts[i] != other.nuts[i]) return false;
+          }
+          return true;
+        }
+      }
+
+      class BoardState {
+        constructor(screws) {
+          this.screws = screws;
+        }
+        clone() {
+          return new BoardState(
+            this.screws.map(function (e) {
+              return e.clone();
+            })
+          );
+        }
+        isEqual(other) {
+          if (this.screws.length != other.screws.length) return false;
+          for (let i = 0; i < this.screws.length; ++i) {
+            if (!this.screws[i].isEqual(other.screws[i])) return false;
+          }
+          return true;
+        }
+        hash() {
+          let str = "";
+          for (let screw of this.screws)
+            for (let n = 0; n < screw.size; n++) {
+              str += n < screw.nuts.length ? screw.nuts[n][0] : "_";
+            }
+          return str;
+        }
+        // checkMove(move) {
+        //   if (move.from < 0 || move.from >= this.screws.length) return false;
+        //   if (move.to < 0 || move.to >= this.screws.length) return false;
+
+        //   if (!this.screws[move.to].hasSpace) return false;
+        //   if (this.screws[move.from].nuts.length == 0) return false;
+
+        //   if (!this.screws[move.to].any()) return true;
+
+        //   return this.screws[move.from].last() == this.screws[move.to].last();
+        // }
+
+        applyMove(move) {
+          // if (!this.checkMove(move)) {
+          //   this.checkMove(move);
+          //   throw new Exception("invalid move");
+          // }
+
+          let nut = this.screws[move.from].pop();
+          this.screws[move.to].push(nut);
+
+          while (
+            this.screws[move.from].last() == nut &&
+            this.screws[move.to].hasSpace()
+          ) {
+            let nut2 = this.screws[move.from].pop();
+            this.screws[move.to].push(nut2);
+          }
+        }
+
+        getPossibleMoves() {
+          let moves = [];
+          for (let from = 0; from < this.screws.length; from++) {
+            let f = this.screws[from];
+            if (f.isEmpty()) continue;
+
+            for (let to = 0; to < this.screws.length; to++) {
+              if (from == to) continue;
+
+              let t = this.screws[to];
+              if (!t.hasSpace()) continue;
+
+              if (t.isEmpty() && !f.hasOnlyOneColor())
+                moves.push(new Move(from, to, -1));
+
+              if (f.last() == t.last()) {
+                let b = this.clone();
+                let m = new Move(from, to, 0);
+
+                if (f.numSameColorNutsOnTop() > t.numFreeSpaces()) continue;
+
+                b.applyMove(m);
+                if (b.screws[to].isSolved()) m.euristic = 1;
+
+                moves.push(m);
+              }
+            }
+          }
+          return moves;
+        }
+        isSolved() {
+          return this.screws.every((s) => s.isSolved());
+        }
+        toString() {
+          let s = "";
+          let i = 0;
+          for (let screw of this.screws) {
+            s += i++ + "] ";
+            for (let n = 0; n < screw.size; n++) {
+              s +=
+                "" +
+                (n < screw.nuts.length
+                  ? "<span style='color: " +
+                    screw.nuts[n] +
+                    ";'>" +
+                    screw.nuts[n] +
+                    "</span>"
+                  : "_") +
+                " ";
+            }
+            // s += screw.size;
+            s += "<br>";
+          }
+          // s += this.isSolved() ? "solved" : "not solved";
+          return s;
+        }
+      }
+
+      // let screws = [
+      //   new Screw(["red", "blue", "red"]),
+      //   new Screw(["blue", "red", "blue"]),
+      //   new Screw(3),
+      // ];
+      // let screws = [
+      //   new Screw(["gray", "yellow", "green", "red"]),
+      //   new Screw(["black", "yellow", "magenta", "pink"]),
+      //   new Screw(["salmon", "cyan", "purple", "orange"]),
+      //   new Screw(["cyan", "red", "purple", "magenta"]),
+      //   new Screw(["orange", "red", "yellow", "purple"]),
+      //   new Screw(["orange", "salmon", "black", "gray"]),
+      //   new Screw(["magenta", "purple", "red", "cyan"]),
+      //   new Screw(["cyan", "blue", "gray", "blue"]),
+      //   new Screw(["black", "salmon", "pink", "green"]),
+      //   new Screw(["pink", "magenta", "gray", "blue"]),
+      //   new Screw(["salmon", "green", "green", "orange"]),
+      //   new Screw(["pink", "blue", "yellow", "black"]),
+      //   new Screw(4),
+      //   new Screw(4),
+      // ];
+      // let screws = [
+      //   new Screw(["orange", "green", "yellow", "pink"]),
+      //   new Screw(["pink", "magenta", "black", "magenta"]),
+      //   new Screw(["salmon", "pink", "black", "cyan"]),
+      //   new Screw(["black", "yellow", "purple", "cyan"]),
+      //   new Screw(["black", "cyan", "cyan", "orange"]),
+
+      //   new Screw(["blue", "blue", "orange", "gray"]),
+      //   new Screw(["salmon", "green", "pink", "yellow"]),
+      //   new Screw(["yellow", "red", "purple", "purple"]),
+      //   new Screw(["magenta", "orange", "gray", "salmon"]),
+      //   new Screw(["blue", "red", "green", "green"]),
+
+      //   new Screw(["purple", "magenta", "gray", "blue"]),
+      //   new Screw(["red", "gray", "red", "salmon"]),
+      //   new Screw(4),
+      //   new Screw(4),
+      // ];
+
+      let screws = [
+        new Screw(["red", "red", "blue"]),
+        new Screw(["blue", "red", "blue"]),
+        new Screw(3),
+      ];
+      let b = new BoardState(screws);
+
+      let writeln = (s) => {
+        document.getElementById("demo").innerHTML += s + "<br><br>";
+      };
+
+      let movesToString = (moves) => {
+        let s = "";
+        moves.forEach((m) => {
+          s += m.toString() + ", ";
+        });
+        s = s.slice(0, -2);
+        return "[" + s + "]";
+      };
+
+      writeln(b.toString());
+
+
+      function iterativeSolver(board) {
+        visitedBoardsHash = [];
+        visitedBoardsHash.push(board.hash().hashCode());
+
+        function State(board, movesHistory) {
+          this.board = board;
+          this.movesHistory = movesHistory;
+        }
+
+        let queue = [];
+        queue.push(new State(board, []));
+
+        let counter = 0;
+
+        while (queue.length > 0) {
+          counter++;
+          let state = queue.shift();
+
+          if (state.movesHistory.length > 100) continue;
+
+          let moves = state.board.getPossibleMoves();
+
+          for (let m of moves) {
+            let b = state.board.clone();
+            b.applyMove(m);
+
+            let hash = b.hash().hashCode();
+            if (visitedBoardsHash.includes(hash)) continue;
+
+            let h = state.movesHistory.map((m) => m.clone());
+            h.push(m);
+
+            if (b.isSolved()) {
+              writeln(
+                "solved! (in " +
+                  counter +
+                  " visited states) (the solution has " +
+                  h.length +
+                  " steps)"
+              );
+              writeln("moves: " + movesToString(h));
+
+              let bb = board.clone();
+              let step = 1;
+              for (let mm of h) {
+                writeln("step " + step++ + " :");
+                bb.applyMove(mm);
+                writeln(mm.toString());
+                writeln(bb.toString());
+              }
+              return true;
+            }
+
+            visitedBoardsHash.push(hash);
+
+            queue.push(new State(b, h));
+          }
+
+          queue.sort(
+            (a, b) =>
+              b.movesHistory.at(-1).euristic - a.movesHistory.at(-1).euristic ||
+              b.movesHistory.length - a.movesHistory.length
+          );
+        }
+
+        writeln("no solution found!");
+
+        return false;
+      }
+
+      iterativeSolver(b);
+    </script>
+  </body>
+</html>
